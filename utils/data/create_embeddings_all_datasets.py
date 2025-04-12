@@ -1,0 +1,90 @@
+import os
+import numpy as np
+import torch
+from transformers import AutoModel, AutoTokenizer
+from pathlib import Path
+
+# Cấu hình
+MODEL_NAME = "xlm-roberta-base"
+BATCH_SIZE = 64
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Gốc của dự án
+ROOT_DIR = "/content/drive/MyDrive/projects/DualTopic"
+
+def load_model_and_tokenizer(model_name=MODEL_NAME):
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+    return tokenizer, model
+
+def create_word_embeddings(vocab_file, output_file, tokenizer, model, device=DEVICE, batch_size=BATCH_SIZE):
+    if not os.path.exists(vocab_file):
+        print(f"Vocab file {vocab_file} not found, skipping.")
+        return
+    with open(vocab_file, "r", encoding="utf-8") as f:
+        vocab = [line.strip() for line in f]
+    model.eval()
+    embeddings = []
+    with torch.no_grad():
+        for i in range(0, len(vocab), batch_size):
+            batch_vocab = vocab[i:i + batch_size]
+            inputs = tokenizer(batch_vocab, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            outputs = model(**inputs)
+            batch_embeddings = outputs.last_hidden_state.mean(dim=1).cpu().numpy()
+            embeddings.extend(batch_embeddings)
+    embeddings = np.array(embeddings)
+    np.save(output_file, embeddings)
+    print(f"Saved word embeddings to {output_file}")
+
+def create_doc_embeddings(text_file, output_file, tokenizer, model, device=DEVICE, batch_size=BATCH_SIZE):
+    if not os.path.exists(text_file):
+        print(f"Text file {text_file} not found, skipping.")
+        return
+    with open(text_file, "r", encoding="utf-8") as f:
+        texts = [line.strip() for line in f]
+    model.eval()
+    embeddings = []
+    with torch.no_grad():
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            inputs = tokenizer(batch_texts, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            outputs = model(**inputs)
+            batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()  # Token <s>
+            embeddings.extend(batch_embeddings)
+    embeddings = np.array(embeddings)
+    np.save(output_file, embeddings)
+    print(f"Saved doc embeddings to {output_file}")
+
+def main():
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    
+    tokenizer, model = load_model_and_tokenizer()
+    model.to(DEVICE)
+    
+    datasets = [
+        {"name": "Amazon_Review", "langs": ["en", "cn"]},
+        {"name": "ECNews", "langs": ["en", "cn"]},
+        {"name": "Rakuten_Amazon", "langs": ["en", "ja"]}
+    ]
+    
+    for dataset in datasets:
+        data_dir = os.path.join(ROOT_DIR, "data", dataset["name"])
+        Path(data_dir).mkdir(parents=True, exist_ok=True)
+        
+        for lang in dataset["langs"]:
+            vocab_file = os.path.join(data_dir, f"vocab_{lang}")
+            word_output = os.path.join(data_dir, f"word_embeddings_{lang}.npy")
+            create_word_embeddings(vocab_file, word_output, tokenizer, model)
+            
+            train_text_file = os.path.join(data_dir, f"train_texts_{lang}.txt")
+            train_doc_output = os.path.join(data_dir, f"doc_embeddings_{lang}_train.npy")
+            create_doc_embeddings(train_text_file, train_doc_output, tokenizer, model)
+            
+            test_text_file = os.path.join(data_dir, f"test_texts_{lang}.txt")
+            test_doc_output = os.path.join(data_dir, f"doc_embeddings_{lang}_test.npy")
+            create_doc_embeddings(test_text_file, test_doc_output, tokenizer, model)
+
+if __name__ == "__main__":
+    main()
