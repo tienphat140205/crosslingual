@@ -1,0 +1,12 @@
+{"epoch": 1, "total_loss": 121.59334259033203, "tm_loss_lang1": 24.3744255065918, "tm_loss_lang2": 24.343647289276124, "contrast_loss": 44.77895164489746, "align_loss": 28.096317958831786}
+{"epoch": 2, "total_loss": 113.35506324768066, "tm_loss_lang1": 22.395483875274657, "tm_loss_lang2": 22.44636697769165, "contrast_loss": 44.75439577102661, "align_loss": 23.758817625045776}
+{"epoch": 3, "total_loss": 107.32735671997071, "tm_loss_lang1": 22.03590669631958, "tm_loss_lang2": 22.046294832229613, "contrast_loss": 44.75000581741333, "align_loss": 18.4951491355896}
+{"epoch": 4, "total_loss": 103.45129203796387, "tm_loss_lang1": 21.89258737564087, "tm_loss_lang2": 21.906817388534545, "contrast_loss": 44.7273681640625, "align_loss": 14.924518918991089}
+{"epoch": 5, "total_loss": 100.42787590026856, "tm_loss_lang1": 21.784285736083984, "tm_loss_lang2": 21.784452772140504, "contrast_loss": 44.72050714492798, "align_loss": 12.138630604743957}
+{"epoch": 6, "total_loss": 97.89129467010498, "tm_loss_lang1": 21.68192343711853, "tm_loss_lang2": 21.70729684829712, "contrast_loss": 44.731368732452395, "align_loss": 9.770705366134644}
+{"epoch": 7, "total_loss": 95.73426628112793, "tm_loss_lang1": 21.598657417297364, "tm_loss_lang2": 21.6356201171875, "contrast_loss": 44.72011604309082, "align_loss": 7.779873251914978}
+{"epoch": 8, "total_loss": 93.93972187042236, "tm_loss_lang1": 21.540395736694336, "tm_loss_lang2": 21.55732479095459, "contrast_loss": 44.698213291168216, "align_loss": 6.143787455558777}
+{"epoch": 9, "total_loss": 92.54452724456787, "tm_loss_lang1": 21.510929155349732, "tm_loss_lang2": 21.50696129798889, "contrast_loss": 44.699898433685306, "align_loss": 4.826738286018371}
+{"epoch": 10, "total_loss": 91.40570640563965, "tm_loss_lang1": 21.456357526779176, "tm_loss_lang2": 21.46972784996033, "contrast_loss": 44.69634647369385, "align_loss": 3.783274507522583}
+{"epoch": 11, "total_loss": 90.48781471252441, "tm_loss_lang1": 21.410539197921754, "tm_loss_lang2": 21.42748565673828, "contrast_loss": 44.684368419647214, "align_loss": 2.965421622991562}
+{"epoch": 12, "total_loss": 89.7924560546875, "tm_loss_lang1": 21.385527467727663, "tm_loss_lang2": 21.385444593429565, "contrast_loss": 44.69322385787964, "align_loss": 2.3282590091228483}

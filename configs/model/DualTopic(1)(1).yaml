@@ -1,0 +1,20 @@
+# Model architecture & core parameters
+num_topic: 50       # Số lượng topic
+hidden_dim: 300     # Kích thước lớp ẩn trong Encoder
+dropout: 0.2        # Tỷ lệ dropout
+tau: 0.75           # Nhiệt độ cho contrastive loss và tính beta
+epsilon: 0.05       # Tham số cho Sinkhorn (alignment loss)
+
+# Loss weights
+lambda_contrast: 2.0  # Trọng số cho contrastive loss (dựa trên cluster)
+gamma_align: 5.0      # Trọng số cho alignment loss (topic embeddings)
+
+# Training parameters
+learning_rate: 0.001
+epochs: 15
+
+# Optional LR Scheduler (ví dụ: StepLR)
+# Bỏ comment và đặt giá trị nếu muốn dùng
+lr_scheduler: StepLR
+lr_step_size: 30
+lr_gamma: 0.5

@@ -9,7 +9,6 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-
 def TU_eva(texts):
     K = len(texts)
     T = len(texts[0].split())
@@ -25,7 +24,6 @@ def TU_eva(texts):
     TU /= K
 
     return TU
-
 
 if __name__ == "__main__":
     args = parse_args()

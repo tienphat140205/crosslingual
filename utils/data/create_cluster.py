@@ -1,121 +1,137 @@
-import os
 import numpy as np
-from cuml.cluster import HDBSCAN
-from sklearn.preprocessing import normalize
-from scipy.linalg import svd
 from scipy.stats import ttest_ind
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import pandas as pd
+import os
+import dask.array as da
+from pathlib import Path
 
-# Đường dẫn gốc tới thư mục chứa data
-base_data_dir = '/content/drive/MyDrive/projects/DualTopic/data'
+# Hàm căn giữa và chuẩn hóa embeddings cho từng ngôn ngữ
+def embed_centering(embeddings, lang_index):
+    embeddings_1 = embeddings[lang_index == 0]  # Ngôn ngữ 1
+    embeddings_2 = embeddings[lang_index == 1]  # Ngôn ngữ 2
+    scaler = StandardScaler()
+    embeddings_1_center = scaler.fit_transform(embeddings_1)
+    embeddings_2_center = scaler.fit_transform(embeddings_2)
+    return np.concatenate((embeddings_1_center, embeddings_2_center), axis=0)
 
-# Dictionary định nghĩa các dataset và ngôn ngữ không phải tiếng Anh
-datasets = {
-    'Amazon_Review': 'cn',  # Tiếng Trung
-    'ECNews': 'cn',         # Tiếng Trung
-    'Rakuten_Amazon': 'ja'  # Tiếng Nhật
-}
+# Hàm thực hiện SVD
+def embed_SVD(embeddings, r=50):
+    embeddings = da.from_array(embeddings)  # Dùng dask để xử lý dữ liệu lớn
+    u, s, v = da.linalg.svd(embeddings)
+    u = u[:, :r].compute()  # Giảm xuống r chiều
+    s = s[:r].compute()
+    return u, u * s  # Trả về U (u-SVD) và U * Sigma (SVD-LR)
 
-# Tham số HDBSCAN (đã điều chỉnh để giảm nhiễu)
-min_cluster_size = 5   # Giảm để cho phép cluster nhỏ hơn
-min_samples = 3        # Giảm để dễ tạo cluster hơn
-cluster_selection_method = 'leaf'  # Đổi sang 'leaf' để tạo nhiều cluster nhỏ hơn
+# Hàm loại bỏ các chiều ngôn ngữ trong SVD-LR
+def lang_dim_remove(embed_scale, lang_index, num_dims_to_remove=3):
+    embed_scale_lang1 = embed_scale[lang_index == 0]
+    embed_scale_lang2 = embed_scale[lang_index == 1]
+    def t_test(dim):
+        res = ttest_ind(embed_scale_lang1[:, dim], embed_scale_lang2[:, dim])
+        return res.statistic, res.pvalue
+    res = [t_test(dim) for dim in range(embed_scale.shape[1])]
+    ttest_df = pd.DataFrame(res, columns=["statistic", "pvalue"])
+    ttest_df["statistic"] = np.abs(ttest_df["statistic"])
+    top_dims = ttest_df["statistic"].nlargest(num_dims_to_remove).index
+    return np.delete(embed_scale, top_dims, axis=1)
 
-# Tham số giảm chiều
-n_components = 100  # Số chiều sau khi giảm (theo tài liệu, giảm từ 768 xuống 100)
+# Hàm tính độ lệch chuẩn của tỷ lệ ngôn ngữ trong các cụm
+def compute_language_balance(cluster_labels, lang_index, K):
+    ratios = []
+    for k in range(K):
+        cluster_indices = np.where(cluster_labels == k)[0]
+        if len(cluster_indices) == 0:
+            continue
+        lang0_count = np.sum(lang_index[cluster_indices] == 0)
+        total_count = len(cluster_indices)
+        ratio = lang0_count / total_count if total_count > 0 else 0.5
+        ratios.append(ratio)
+    return np.std(ratios) if ratios else float('inf')
 
-# Phương pháp tinh chỉnh chiều: 'u-SVD' hoặc 'SVD-LR'
-dimension_refinement_method = 'u-SVD'  # Có thể đổi sang 'SVD-LR'
-
-# Vòng lặp qua từng dataset
-for dataset, lang in datasets.items():
-    print(f"Đang xử lý {dataset}...")
-
-    # Tạo đường dẫn tới file embedding
-    en_train_path = os.path.join(base_data_dir, dataset, 'doc_embeddings_en_train.npy')
-    lang_train_path = os.path.join(base_data_dir, dataset, f'doc_embeddings_{lang}_train.npy')
-
-    # Kiểm tra xem file có tồn tại không
-    if not os.path.exists(en_train_path) or not os.path.exists(lang_train_path):
-        print(f"Lỗi: Không tìm thấy file embedding cho {dataset}")
-        continue
-
-    # Load embedding
-    doc_embeddings_en = np.load(en_train_path)
-    doc_embeddings_lang = np.load(lang_train_path)
-
-    # Ghép embedding của 2 ngôn ngữ thành 1 mảng
-    all_embeddings = np.vstack([doc_embeddings_en, doc_embeddings_lang])
-
-    # Chuẩn hóa embedding để độ dài = 1 (norm L2 = 1)
-    print("Chuẩn hóa embedding...")
-    all_embeddings_normalized = normalize(all_embeddings, axis=1, norm='l2')
-
-    # Bước tinh chỉnh chiều bằng SVD (u-SVD hoặc SVD-LR)
-    print("Tinh chỉnh chiều bằng SVD...")
-    # Thực hiện SVD: E = U * Sigma * V^T
-    U, Sigma, Vt = svd(all_embeddings_normalized, full_matrices=False)
+# Hàm xử lý từng tập dữ liệu và lưu nhãn cụm
+def process_dataset(dataset_name, lang1, lang2):
+    base_path = "/content/drive/MyDrive/projects/DualTopic/data"
+    embed_path_lang1 = f"{base_path}/{dataset_name}/doc_embeddings_{lang1}_train.npy"
+    embed_path_lang2 = f"{base_path}/{dataset_name}/doc_embeddings_{lang2}_train.npy"
+    save_dir = f"{base_path}/{dataset_name}"
     
-    # Chỉ giữ lại n_components chiều
-    U = U[:, :n_components]  # U: ma trận trái (m x n_components)
-    Sigma = np.diag(Sigma[:n_components])  # Sigma: ma trận chéo (n_components x n_components)
-    Vt = Vt[:n_components, :]  # V^T: ma trận phải (n_components x d)
+    # Kiểm tra file tồn tại
+    for path in [embed_path_lang1, embed_path_lang2]:
+        if not os.path.exists(path):
+            print(f"File không tồn tại: {path}")
+            return
 
-    if dimension_refinement_method == 'u-SVD':
-        # u-SVD: Chỉ sử dụng U để biểu diễn dữ liệu
-        all_embeddings_refined = U
-    elif dimension_refinement_method == 'SVD-LR':
-        # SVD-LR: Sử dụng U * Sigma, sau đó loại bỏ LDD mạnh nhất
-        all_embeddings_refined = U @ Sigma  # (m x n_components)
-
-        # Xác định LDD mạnh nhất bằng two-sample t-test
-        num_en = doc_embeddings_en.shape[0]
-        en_embeddings = all_embeddings_refined[:num_en, :]
-        lang_embeddings = all_embeddings_refined[num_en:, :]
-
-        # Thực hiện t-test cho từng chiều
-        t_stats = []
-        for dim in range(n_components):
-            t_stat, _ = ttest_ind(en_embeddings[:, dim], lang_embeddings[:, dim])
-            t_stats.append(abs(t_stat))
-        
-        # Tìm chiều có t-statistic lớn nhất (LDD mạnh nhất)
-        most_influential_ldd = np.argmax(t_stats)
-        print(f"Loại bỏ chiều LDD mạnh nhất: {most_influential_ldd}")
-
-        # Loại bỏ chiều LDD mạnh nhất
-        all_embeddings_refined = np.delete(all_embeddings_refined, most_influential_ldd, axis=1)
-    else:
-        raise ValueError("Phương pháp tinh chỉnh chiều không hợp lệ. Chọn 'u-SVD' hoặc 'SVD-LR'.")
-
-    # Thực hiện clustering với HDBSCAN trên GPU
-    print("Phân cụm với HDBSCAN trên GPU...")
-    hdbscan = HDBSCAN(min_cluster_size=min_cluster_size,
-                      min_samples=min_samples,
-                      cluster_selection_method=cluster_selection_method,
-                      metric='euclidean')
-    labels = hdbscan.fit_predict(all_embeddings_refined)
-
-    # Tách nhãn cluster
-    num_en = doc_embeddings_en.shape[0]
-    labels_en = labels[:num_en]
-    labels_lang = labels[num_en:]
-
-    # Tính số điểm nhiễu và số cluster
-    noise_en = np.sum(labels_en == -1)
-    noise_lang = np.sum(labels_lang == -1)
-    total_noise = noise_en + noise_lang
-    num_clusters = len(np.unique(labels[labels != -1]))
-
+    # Tạo thư mục lưu nếu chưa có
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+    
+    # Tải embeddings
+    embed_lang1 = np.load(embed_path_lang1)
+    embed_lang2 = np.load(embed_path_lang2)
+    
+    # Cân bằng số văn bản giữa hai ngôn ngữ
+    min_samples = min(len(embed_lang1), len(embed_lang2))
+    if len(embed_lang1) > min_samples:
+        indices = np.random.choice(len(embed_lang1), min_samples, replace=False)
+        embed_lang1 = embed_lang1[indices]
+    if len(embed_lang2) > min_samples:
+        indices = np.random.choice(len(embed_lang2), min_samples, replace=False)
+        embed_lang2 = embed_lang2[indices]
+    
+    embeddings = np.concatenate([embed_lang1, embed_lang2], axis=0)
+    lang_index = np.concatenate([np.zeros(len(embed_lang1)), np.ones(len(embed_lang2))])
+    
+    # Pipeline xử lý embeddings
+    embeddings_center = embed_centering(embeddings, lang_index)
+    embed_usvd, embed_svdlr = embed_SVD(embeddings_center, r=50)
+    
+    # u-SVD: Chuẩn hóa sau SVD
+    scaler = StandardScaler()
+    embed_usvd = scaler.fit_transform(embed_usvd)
+    
+    # SVD-LR: Loại bỏ chiều ngôn ngữ và chuẩn hóa
+    embed_svdlr = lang_dim_remove(embed_svdlr, lang_index, num_dims_to_remove=3)
+    embed_svdlr = scaler.fit_transform(embed_svdlr)
+    
+    # Phân cụm với K-means (K=20)
+    K = 20
+    kmeans_usvd = KMeans(n_clusters=K, random_state=0).fit(embed_usvd)
+    kmeans_svdlr = KMeans(n_clusters=K, random_state=0).fit(embed_svdlr)
+    
+    # Đánh giá độ cân bằng ngôn ngữ
+    std_usvd = compute_language_balance(kmeans_usvd.labels_, lang_index, K)
+    std_svdlr = compute_language_balance(kmeans_svdlr.labels_, lang_index, K)
+    
+    # Chọn phương pháp tốt hơn
+    best_method = "u-SVD" if std_usvd < std_svdlr else "SVD-LR"
+    best_labels = kmeans_usvd.labels_ if std_usvd < std_svdlr else kmeans_svdlr.labels_
+    
+    # Tách nhãn cụm theo ngôn ngữ
+    labels_lang1 = best_labels[lang_index == 0]  # Nhãn cho ngôn ngữ 1
+    labels_lang2 = best_labels[lang_index == 1]  # Nhãn cho ngôn ngữ 2
+    
+    # Lưu nhãn cụm vào hai file riêng
+    save_path_lang1 = f"{save_dir}/cluster_labels_{lang1}.npy"
+    save_path_lang2 = f"{save_dir}/cluster_labels_{lang2}.npy"
+    np.save(save_path_lang1, labels_lang1)
+    np.save(save_path_lang2, labels_lang2)
+    print(f"Đã lưu nhãn cụm vào: {save_path_lang1}")
+    print(f"Đã lưu nhãn cụm vào: {save_path_lang2}")
+    
     # In kết quả
-    print(f"Kết quả phân cụm cho {dataset}:")
-    print(f"  - Số cluster: {num_clusters}")
-    print(f"  - Số điểm nhiễu trong {dataset}:")
-    print(f"    + Tiếng Anh: {noise_en} / {num_en} (chiếm {noise_en/num_en*100:.2f}%)")
-    print(f"    + {lang}: {noise_lang} / {len(labels_lang)} (chiếm {noise_lang/len(labels_lang)*100:.2f}%)")
-    print(f"    + Tổng cộng: {total_noise} / {len(all_embeddings)} (chiếm {total_noise/len(all_embeddings)*100:.2f}%)")
+    print(f"Tập dữ liệu: {dataset_name} (Phương pháp: {best_method}, std={min(std_usvd, std_svdlr):.4f})")
+    for k in range(K):
+        cluster_indices = np.where(best_labels == k)[0]
+        lang0_count = np.sum(lang_index[cluster_indices] == 0)
+        lang1_count = np.sum(lang_index[cluster_indices] == 1)
+        print(f"Cụm {k}: {lang0_count} văn bản từ {lang1}, {lang1_count} văn bản từ {lang2}")
 
-    # Lưu nhãn
-    np.save(os.path.join(base_data_dir, dataset, 'cluster_labels_en_train.npy'), labels_en)
-    np.save(os.path.join(base_data_dir, dataset, f'cluster_labels_{lang}_train.npy'), labels_lang)
-
-    print(f"Đã hoàn thành clustering cho {dataset}. Nhãn đã được lưu.\n")
+# Chạy mã cho các tập dữ liệu
+if __name__ == "__main__":
+    print("Kết quả phân cụm:\n")
+    process_dataset('Amazon_Review', 'cn', 'en')
+    print("\n")
+    process_dataset('ECNews', 'cn', 'en')
+    print("\n")
+    process_dataset('Rakuten_Amazon', 'ja', 'en')

@@ -1,3 +1,4 @@
 lang1: en
 lang2: ja
+batch_size: 128
 dict_path: ../data/dict/MUSE/ja-en.txt

@@ -1,0 +1,20 @@
+# Model architecture & core parameters
+num_topic: 20          # Số lượng topic
+hidden_dim: 300        # Kích thước lớp ẩn trong Encoder
+dropout: 0.2           # Tỷ lệ dropout
+tau: 0.75              # Nhiệt độ cho tính beta
+trans_dict_path: 'data/dict/ch_en_dict.dat'  # Cập nhật đường dẫn đúng
+temperature: 0.07       # Nhiệt độ cho Mutual Information loss
+pos_threshold: 0.7     # Ngưỡng xác suất tích cực cho mask
+
+# Loss weights
+lambda_contrast: 15    # Trọng số cho contrastive loss (dựa trên cluster)
+weight_MI: 6.5          # Trọng số cho Mutual Information loss
+
+# Training parameters
+learning_rate: 0.002
+epochs: 50
+
+lr_scheduler: StepLR
+lr_step_size: 30
+lr_gamma: 1

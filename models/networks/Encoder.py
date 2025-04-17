@@ -3,13 +3,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class MLPEncoder(nn.Module):
-    def __init__(self, vocab_size, num_topics, hidden_dim, dropout=0.3):
+    def __init__(self, input_dim, num_topics, hidden_dim, dropout=0.3):
         super(MLPEncoder, self).__init__()
-        self.vocab_size = vocab_size
+        self.input_dim = input_dim
         self.num_topics = num_topics
 
         # MLP layers
-        self.fc11 = nn.Linear(vocab_size, hidden_dim)
+        self.fc11 = nn.Linear(input_dim, hidden_dim)
         self.fc12 = nn.Linear(hidden_dim, hidden_dim)
         self.fc21 = nn.Linear(hidden_dim, num_topics)  # Mean
         self.fc22 = nn.Linear(hidden_dim, num_topics)  # Log-variance

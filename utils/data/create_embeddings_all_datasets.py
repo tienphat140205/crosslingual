@@ -5,8 +5,8 @@ from transformers import AutoModel, AutoTokenizer
 from pathlib import Path
 
 # Cấu hình
-MODEL_NAME = "xlm-roberta-base"
-BATCH_SIZE = 64
+MODEL_NAME = "microsoft/infoxlm-base"
+BATCH_SIZE = 32
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Gốc của dự án
@@ -81,10 +81,6 @@ def main():
             train_text_file = os.path.join(data_dir, f"train_texts_{lang}.txt")
             train_doc_output = os.path.join(data_dir, f"doc_embeddings_{lang}_train.npy")
             create_doc_embeddings(train_text_file, train_doc_output, tokenizer, model)
-            
-            test_text_file = os.path.join(data_dir, f"test_texts_{lang}.txt")
-            test_doc_output = os.path.join(data_dir, f"doc_embeddings_{lang}_test.npy")
-            create_doc_embeddings(test_text_file, test_doc_output, tokenizer, model)
 
 if __name__ == "__main__":
     main()
