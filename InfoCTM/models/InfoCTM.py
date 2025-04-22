@@ -95,42 +95,19 @@ class InfoCTM(nn.Module):
         return beta.transpose(0, 1)
 
     def MutualInfo(self, anchor_feature, contrast_feature, mask, neg_mask, temperature):
-        # Higher epsilon for better stability
-        eps = 1e-6
-        
-        # Check for and fix any NaN inputs
-        if torch.isnan(anchor_feature).any() or torch.isnan(contrast_feature).any():
-            print("Warning: NaN detected in features")
-            anchor_feature = torch.where(torch.isnan(anchor_feature), torch.zeros_like(anchor_feature), anchor_feature)
-            contrast_feature = torch.where(torch.isnan(contrast_feature), torch.zeros_like(contrast_feature), contrast_feature)
-        
-        # Safe normalization
-        anchor_norm = F.normalize(anchor_feature, dim=1, eps=eps)
-        contrast_norm = F.normalize(contrast_feature, dim=1, eps=eps)
-        
-        # Calculate similarity with temperature scaling
-        anchor_dot_contrast = torch.matmul(anchor_norm, contrast_norm.T) / max(temperature, 1e-4)
-        
-        # Numerical stability: subtract max value
+
+        anchor_dot_contrast = torch.div(
+            torch.matmul(F.normalize(anchor_feature, dim=1), F.normalize(contrast_feature, dim=1).T),
+            temperature
+        )
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
         logits = anchor_dot_contrast - logits_max.detach()
-        
-        # Safe exponentiation
-        exp_logits = torch.exp(torch.clamp(logits, -50, 50)) * neg_mask
+
+        exp_logits = torch.exp(logits) * neg_mask
         sum_exp_logits = exp_logits.sum(1, keepdim=True)
-        
-        # Safe logarithm
-        denominator = sum_exp_logits + torch.exp(torch.clamp(logits, -50, 50)) + eps
-        log_prob = logits - torch.log(denominator)
-        
-        # Calculate final loss
+
+        log_prob = logits - torch.log(sum_exp_logits + torch.exp(logits) + 1e-10)
         mean_log_prob = -(mask * log_prob).sum()
-        
-        # Check for NaN in output
-        if torch.isnan(mean_log_prob):
-            print("Warning: NaN detected in MutualInfo output")
-            return torch.tensor(0.0, device=anchor_feature.device)
-            
         return mean_log_prob
 
     # Comment: Fixed contrastive loss function formatting and implementation    
